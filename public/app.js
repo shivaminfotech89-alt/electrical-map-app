@@ -563,18 +563,31 @@ $('btnOpenMap').addEventListener('click', async () => {
       buttons: {
         cancel: { text: 'Cancel' },
         ok: {
-          text: 'Open',
-          action: async (selectedText) => {
-            if (!selectedText) { showToast('Pick a map.', 'warn'); return; }
-            const id = Number(selectedText.split(' — ')[0]);
-            const res = await fetch(`/api/maps/${id}`);
-            if (!res.ok) { showToast('Failed to load map from server.', 'danger'); return; }
-            const record = await res.json(); // { id, title, data, ... }
-            await rehydrateFromData(record.data, record.title);
-          }
-        }
-      }
-    });
+  text: 'Open',
+  action: async (selectedItem) => {
+    if (!selectedItem) {
+      showToast('Pick a map.', 'warn');
+      return;
+    }
+            const selectedText = (typeof selectedItem === 'string')
+      ? selectedItem
+      : (selectedItem.dataset?.value || '');
+
+    if (!selectedText) {
+      showToast('Pick a map.', 'warn');
+      return;
+    }
+
+    const id = Number(selectedText.split(' — ')[0]);
+    const res = await fetch(`/api/maps/${id}`);
+    if (!res.ok) {
+      showToast('Failed to load map from server.', 'danger');
+      return;
+    }
+    const record = await res.json(); // { id, title, data }
+    await rehydrateFromData(record.data, record.title);
+  }
+});
 
     // wire up live search (we can access the modal elements)
     const input = document.getElementById('searchText');
