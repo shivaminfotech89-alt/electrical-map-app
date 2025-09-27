@@ -36,32 +36,57 @@ let activeMarker = null;
 let htvrOverlays = [];
 
 /*** Server API helpers ***/
-let currentServerId = null;
-async function api(path, opts) {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-  const txt = await res.text();
-  let out; try { out = txt ? JSON.parse(txt) : {}; } catch { out = { raw: txt }; }
-  if (!res.ok) throw new Error(out?.error || res.statusText);
-  return out;
-}
-async function saveToServer(title, data) {
-  const body = currentServerId ? { id: currentServerId, title, data } : { title, data };
-  const r = await api('/api/maps', { method: 'POST', body: JSON.stringify(body) });
-  if (r.id) currentServerId = r.id;
-  return r.id || currentServerId;
-}
-async function listFromServer() {
-  const r = await api('/api/maps');           // -> { items: [{id,title,updatedAt}, ...] }
-  return r.items || [];
-}
-async function loadFromServer(id) {
-  const r = await api('/api/maps/' + id);     // -> { id, title, data }
-  return r;
-}
-async function deleteFromServer(id) {
-  return api('/api/maps/' + id, { method: 'DELETE' });
+// ===== Server API helpers =====
+const BASE_URL = ""; // same origin (keep empty). If testing local UI against Render server, set full URL: "https://YOUR-APP.onrender.com"
+
+async function saveMapToServer(title, dataObj) {
+  const res = await fetch(`${BASE_URL}/api/maps`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, data: dataObj })
+  });
+  if (!res.ok) throw new Error("Server save failed");
+  const json = await res.json(); // { id }
+  return json.id;
 }
 
+async function listMapsFromServer() {
+  const res = await fetch(`${BASE_URL}/api/maps`);
+  if (!res.ok) throw new Error("Failed to list maps from server");
+  const json = await res.json(); // { items: [{id,title,updatedAt}] }
+  return json.items || [];
+}
+
+async function loadMapFromServer(id) {
+  const res = await fetch(`${BASE_URL}/api/maps/${id}`);
+  if (!res.ok) throw new Error("Failed to load map from server");
+  return await res.json(); // { id,title,data,... }
+}
+
+// bridge helper: stash server map into browser localStorage then reuse your existing loadMap(name)
+function stashToLocalAndLoad(name, data) {
+  try {
+    // put the data into the same place your old code expects
+    localStorage.setItem("sld_map_" + name, JSON.stringify(data));
+    // optionally maintain the local index so your older "Open Map" flow still sees it
+    const idxKey = "sld_maps_index_final";
+    const names = JSON.parse(localStorage.getItem(idxKey) || "[]");
+    if (!names.includes(name)) {
+      names.push(name);
+      localStorage.setItem(idxKey, JSON.stringify(names));
+    }
+    // now call your existing loader
+    if (typeof loadMap === "function") {
+      loadMap(name);
+    } else {
+      // fallback: if you don’t have loadMap(name) in this build, you can rehydrate manually later
+      console.warn("loadMap(name) not found; data is stored locally.");
+    }
+  } catch (e) {
+    console.error(e);
+    showToast("Failed to load map locally.", "danger");
+  }
+}
 /*** Status helpers ***/
 function readyOK(){ if(!statusBadge) return; statusBadge.textContent='Ready'; statusBadge.style.borderColor='var(--success)'; statusBadge.style.background='#10301a'; statusBadge.style.color='#c9f7d8'; }
 function readyERR(msg){ if(!statusBadge) return; statusBadge.textContent='Error'; statusBadge.style.borderColor='var(--danger)'; statusBadge.style.background='#3a0c10'; statusBadge.style.color='#ffd0d0'; console.error('[SLD Builder]', msg); showToast(msg, 'danger'); }
@@ -408,49 +433,49 @@ scaleInput?.addEventListener('change', ()=>{ const v=Number(scaleInput.value); i
 $('btnNewMap')?.addEventListener('click', ()=>{ if(state.nodes.length){ showModal({ title:'New Map', message:'This will clear your current unsaved work. Are you sure?', buttons:{ cancel:{text:'Cancel'}, ok:{ text:'Create New', class:'danger', action:()=>{ clearAll(); mapNameInput.value=''; $('ssName').value=''; }}}}); } else { clearAll(); mapNameInput.value=''; $('ssName').value=''; }});
 
 /*** Save/Open/Delete — SERVER-backed ***/
-$('btnSaveMap')?.addEventListener('click', async ()=>{
-  let name = mapNameInput?.value?.trim() || '';
-  if (!name) {
-    showModal({
-      title:'Save Map',
-      inputs:[{ id:'modal-input', type:'text', placeholder:'Enter map name' }],
-      buttons:{
-        cancel:{ text:'Cancel' },
-        ok:{ text:'Save', action: async (val)=> {
-          const nm=(val['modal-input']||'').trim();
-          if(nm){ mapNameInput.value=nm; await saveMapServer(nm); }
-          else { showToast('Save cancelled. No name provided.','warn'); }
-        }}
-      }
-    });
-  } else {
-    await saveMapServer(name);
+$('btnSaveMap').addEventListener('click', async () => {
+  const name = mapNameInput.value.trim();
+  if (!name) { showToast('Enter map name.', 'warn'); return; }
+  try {
+    const payload = saveMapData();     // your existing function that collects nodes/segs/symbols/etc.
+    const id = await saveMapToServer(name, payload);
+    // keep an offline copy too (optional but handy)
+    localStorage.setItem('sld_map_' + name, JSON.stringify(payload));
+    showToast(`Saved on server (id=${id}).`, 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Server save failed.', 'danger');
   }
 });
-$('btnOpenMap')?.addEventListener('click', async ()=>{
-  const rows = await listMapsServer().catch(()=>[]);
-  if(!rows.length){ showToast('No server maps found.','info'); return; }
-  showModal({
-    title:'Open Map (Server)',
-    type:'list',
-    items: rows.map(r=> `${r.id} — ${r.title}`),
-    buttons:{
-      cancel:{ text:'Cancel' },
-      ok:{ text:'Open', action: async (val)=>{
-        const id = Number((val||'').split('—')[0].trim());
-        if(id) await loadMapServerAndRender(id);
-      }},
-      extra:{ text:'Delete', class:'danger', action: async (val)=>{
-        const id = Number((val||'').split('—')[0].trim());
-        const title = (val||'').split('—')[1]?.trim();
-        if(!id) return showToast('Pick a map first.','warn');
-        showModal({
-          title:'Confirm Delete', message:`Delete map ID ${id}${title?(' ('+title+')'):''}?`,
-          buttons:{ cancel:{text:'Cancel'}, ok:{ text:'Delete', class:'danger', action:()=> deleteMapServer(id, title) } }
-        });
-      }}
-    }
-  });
+
+$('btnOpenMap').addEventListener('click', async () => {
+  try {
+    const items = await listMapsFromServer(); // [{id,title,updatedAt}]
+    if (!items.length) { showToast('No maps on server.', 'info'); return; }
+
+    // show your existing modal list
+    showModal({
+      title: 'Open Map (Server)',
+      type: 'list',
+      items: items.map(i => `${i.id} — ${i.title}`),
+      buttons: {
+        cancel: { text: 'Cancel' },
+        ok: {
+          text: 'Open',
+          action: async (selected) => {
+            if (!selected) { showToast('Pick a map.', 'warn'); return; }
+            const id = Number(selected.split(' — ')[0]);
+            const rec = await loadMapFromServer(id); // {id,title,data,...}
+            stashToLocalAndLoad(rec.title, rec.data); // reuse your existing loadMap(name)
+            showToast(`Loaded "${rec.title}" from server.`, 'success');
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error(e);
+    showToast('Failed to fetch maps from server.', 'danger');
+  }
 });
 
 /*** Quick Demo ***/
