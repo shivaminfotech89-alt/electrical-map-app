@@ -155,74 +155,76 @@ function addLine(km,type){ if(!state.current){ showToast('Create Substation firs
 function addMarker(){ if(!state.current){ showToast('Create Substation first.','warn'); return; } const cur=nodeById(state.current); const g=createSvgElement('g',{'data-sym':'mark'}); const r=createSvgElement('rect',{x:cur.x-6*state.symbolScale,y:cur.y-6*state.symbolScale,width:12*state.symbolScale,height:12*state.symbolScale,fill:'#ffd84d',stroke:'#6b5600','stroke-width':'1.5'}); const t=placeLabel(cur.x,cur.y-12*state.symbolScale,'Tap Point'); g.appendChild(r); svg.appendChild(g); const hist={kind:'marker', els:[g,t], tapNode:state.current}; state.history.push(hist); addListRow('Marker','Tap',()=>focusEls([g,t]),()=>pushTapFromNode(state.current),()=>{ g.remove(); t.remove(); removeFromHistory(hist); }); }
 
 /*** createSymbolElement — needed for restore ***/
-function createSymbolElement(kind, kindId, meta, x, y, scaleVal){
-  const s = scaleVal || state.symbolScale;
-  const cssv = (v)=> getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-  const g = document.createElementNS(svgNS,'g');
-  const make = (el, attrs)=>{ const n=document.createElementNS(svgNS, el); for(const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+// Create an SVG element for a saved symbol record
+function createSymbolElement(kind, kindId, meta, x, y, scale) {
+  const s = scale || state.symbolScale;
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs) => { const n = document.createElementNS(svgNS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
 
-  if (kindId && /^T\d+/.test(kindId)) {
-    const kva=parseFloat((meta||'').replace(/[^0-9.]/g,''))||0;
-    const p=make('path',{ d:'M -9 8 L 9 8 L 0 -10 Z', fill:xfColor(kva), stroke:cssv('--tStroke'), 'stroke-width':'1.2' });
-    g.setAttribute('data-sym','dtr'); g.setAttribute('data-kind-id',kindId); g.appendChild(p);
-  } else if (kindId==='HT' || kind==='ht') {
-    const r=make('rect',{ x:-10,y:-7,width:20,height:14,rx:3, fill:'#223f1f', stroke:'#65c95a', 'stroke-width':'1.8' });
-    g.setAttribute('data-sym','ht'); g.setAttribute('data-kind-id','HT'); g.appendChild(r);
-  } else if (kindId==='RMU3' || kind==='rmu3') {
-    g.setAttribute('data-sym','rmu3'); g.setAttribute('data-kind-id','RMU3');
-    g.append(
-      make('path',{ d:'M -6 -6 L 6 -6 L 6 6 L -6 6 Z', fill:cssv('--rmu3'), stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-      make('line',{ x1:0,y1:-6,x2:0,y2:-10, stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-      make('line',{ x1:0,y1:6,x2:0,y2:10,   stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-      make('line',{ x1:6,y1:0,x2:10,y2:0,   stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-    );
-  } else if (kindId==='RMU4' || kind==='rmu4') {
-    g.setAttribute('data-sym','rmu4'); g.setAttribute('data-kind-id','RMU4');
-    g.append(
-      make('path',{ d:'M -6 -6 L 6 -6 L 6 6 L -6 6 Z', fill:cssv('--rmu4'), stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-      make('line',{ x1:0,y1:-6,x2:0,y2:-10, stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-      make('line',{ x1:0,y1:6,x2:0,y2:10,   stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-      make('line',{ x1:-6,y1:0,x2:-10,y2:0, stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-      make('line',{ x1:6,y1:0,x2:10,y2:0,   stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-    );
-  } else if (kindId==='SW' || kind==='sw') {
-    g.setAttribute('data-sym','sw'); g.setAttribute('data-kind-id','SW');
-    g.append(
-      make('circle',{ cx:0,cy:0,r:5, fill:cssv('--sw'), stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-      make('line',{ x1:0,y1:0,x2:10,y2:0, stroke:cssv('--tStroke'),'stroke-width':'1.5' }),
-    );
-  } else if (kindId==='FP' || kind==='fp') {
-    g.setAttribute('data-sym','fp'); g.setAttribute('data-kind-id','FP');
-    g.append(make('rect',{ x:-6,y:-6,width:12,height:12, fill:cssv('--feederPillar'), stroke:cssv('--tStroke'),'stroke-width':'1.2' }));
-  } else if (kindId==='LA' || kind==='la') {
-    g.setAttribute('data-sym','la'); g.setAttribute('data-kind-id','LA');
-    g.append(make('path',{ d:'M -6 -8 H 6 V -2 H -6 Z M 0 -2 V 4 M -8 4 H 8', fill:'none', stroke:cssv('--lightningArrester'),'stroke-width':'1.5' }));
-  } else if (kindId==='SEC' || kind==='sec') {
-    g.setAttribute('data-sym','sec'); g.setAttribute('data-kind-id','SEC');
-    g.append(
-      make('rect',{ x:-5,y:-5,width:10,height:10, fill:'none', stroke:cssv('--sectionaliser'),'stroke-width':'1.5' }),
-      make('text',{ x:0,y:3,'font-size':'8px','text-anchor':'middle', fill:cssv('--ink') })
-    ); g.lastChild.textContent='S';
-  } else if (kindId==='AR' || kind==='ar') {
-    g.setAttribute('data-sym','ar'); g.setAttribute('data-kind-id','AR');
-    g.append(
-      make('rect',{ x:-5,y:-5,width:10,height:10, fill:'none', stroke:cssv('--autoRecloser'),'stroke-width':'1.5' }),
-      make('text',{ x:0,y:3,'font-size':'7px','text-anchor':'middle', fill:cssv('--ink') })
-    ); g.lastChild.textContent='AR';
-  } else if (kindId==='DOF' || kind==='dof') {
-    g.setAttribute('data-sym','dof'); g.setAttribute('data-kind-id','DOF');
-    g.append(
-      make('circle',{ cx:0,cy:0,r:6, fill:'none', stroke:cssv('--dropOutFuse'),'stroke-width':'1.5' }),
-      make('line',{ x1:-4,y1:4,x2:4,y2:-4, stroke:cssv('--dropOutFuse'),'stroke-width':'1.5' }),
-    );
-  } else if (kind==='custom' || (kindId && kindId.startsWith('custom_'))) {
-    const comp = state.customComponents.find(c=>c.id===kindId);
-    const symbol = comp ? AVAILABLE_SYMBOLS[comp.symbol] : AVAILABLE_SYMBOLS.diamond;
-    const p = make('path',{ d:symbol.d, fill:symbol.fill||symbol.color, stroke:symbol.stroke||symbol.color, 'stroke-width':symbol['stroke-width']||'1.2' });
-    g.setAttribute('data-sym','custom'); g.setAttribute('data-kind-id', kindId||'custom'); g.appendChild(p);
-  } else { return null; }
+  // known kinds
+  if (kindId?.startsWith('T')) {
+    // transformer by kVA color
+    const kva = parseFloat((meta||'').replace(/[^0-9.]/g,'')||'0');
+    const g = el('path', { d: `M -9 8 L 9 8 L 0 -10 Z`, fill: xfColor(kva), stroke: css('--tStroke'), 'stroke-width': '1.2', 'data-sym':'dtr', 'data-kind-id': kindId, transform: `translate(${x},${y}) scale(${s})` });
+    return g;
+  }
+  if (kindId === 'HT' || kind === 'ht') {
+    const g = el('g', { 'data-sym':'ht', 'data-kind-id':'HT', transform:`translate(${x},${y}) scale(${s})` });
+    g.appendChild(el('rect', { x:-10, y:-7, width:20, height:14, rx:3, fill:'#223f1f', stroke:'#65c95a', 'stroke-width':'1.8' }));
+    return g;
+  }
+  if (kindId === 'RMU3' || kind === 'rmu3') {
+    const g = el('g', { 'data-sym':'rmu3', 'data-kind-id':'RMU3', transform:`translate(${x},${y}) scale(${s})` });
+    g.append(el('path',{d:`M -6 -6 L 6 -6 L 6 6 L -6 6 Z`, fill:css('--rmu3'), stroke:css('--tStroke'),'stroke-width':'1.5'}),
+             el('line',{x1:0,y1:-6,x2:0,y2:-10,stroke:css('--tStroke'),'stroke-width':'1.5'}),
+             el('line',{x1:0,y1:6,x2:0,y2:10,stroke:css('--tStroke'),'stroke-width':'1.5'}),
+             el('line',{x1:6,y1:0,x2:10,y2:0,stroke:css('--tStroke'),'stroke-width':'1.5'}));
+    return g;
+  }
+  if (kindId === 'RMU4' || kind === 'rmu4') {
+    const g = el('g', { 'data-sym':'rmu4', 'data-kind-id':'RMU4', transform:`translate(${x},${y}) scale(${s})` });
+    g.append(el('path',{d:`M -6 -6 L 6 -6 L 6 6 L -6 6 Z`, fill:css('--rmu4'), stroke:css('--tStroke'),'stroke-width':'1.5'}),
+             el('line',{x1:0,y1:-6,x2:0,y2:-10,stroke:css('--tStroke'),'stroke-width':'1.5'}),
+             el('line',{x1:0,y1:6,x2:0,y2:10,stroke:css('--tStroke'),'stroke-width':'1.5'}),
+             el('line',{x1:-6,y1:0,x2:-10,y2:0,stroke:css('--tStroke'),'stroke-width':'1.5'}),
+             el('line',{x1:6,y1:0,x2:10,y2:0,stroke:css('--tStroke'),'stroke-width':'1.5'}));
+    return g;
+  }
+  if (kindId === 'SW' || kind === 'sw') {
+    const g = el('g', { 'data-sym':'sw','data-kind-id':'SW', transform:`translate(${x},${y}) scale(${s})` });
+    g.append(el('circle',{cx:0,cy:0,r:5,fill:css('--sw'),stroke:css('--tStroke'),'stroke-width':'1.5'}),
+             el('line',{x1:0,y1:0,x2:10,y2:0,stroke:css('--tStroke'),'stroke-width':'1.5'}));
+    return g;
+  }
+  if (kindId === 'FP' || kind === 'fp') {
+    return el('rect', { x:-6,y:-6,width:12,height:12, fill:css('--feederPillar'), stroke:css('--tStroke'), 'stroke-width':'1.2', 'data-sym':'fp','data-kind-id':'FP', transform:`translate(${x},${y}) scale(${s})` });
+  }
+  if (kindId === 'LA' || kind === 'la') {
+    const g = el('g', { 'data-sym':'la','data-kind-id':'LA', transform:`translate(${x},${y}) scale(${s})` });
+    g.append(el('path',{ d:'M -6 -8 H 6 V -2 H -6 Z M 0 -2 V 4 M -8 4 H 8', fill:'none', stroke:css('--lightningArrester'),'stroke-width':'1.5'}));
+    return g;
+  }
+  if (kindId === 'SEC' || kind === 'sec') {
+    const g = el('g', { 'data-sym':'sec','data-kind-id':'SEC', transform:`translate(${x},${y}) scale(${s})` });
+    g.append(el('rect',{x:-5,y:-5,width:10,height:10,fill:'none',stroke:css('--sectionaliser'),'stroke-width':'1.5'}),
+             el('text',{x:0,y:3,'font-size':'8px','text-anchor':'middle',fill:css('--ink')}, 'S'));
+    return g;
+  }
+  if (kindId === 'AR' || kind === 'ar') {
+    const g = el('g', { 'data-sym':'ar','data-kind-id':'AR', transform:`translate(${x},${y}) scale(${s})` });
+    g.append(el('rect',{x:-5,y:-5,width:10,height:10,fill:'none',stroke:css('--autoRecloser'),'stroke-width':'1.5'}),
+             el('text',{x:0,y:3,'font-size':'7px','text-anchor':'middle',fill:css('--ink')}, 'AR'));
+    return g;
+  }
+  if (kindId === 'DOF' || kind === 'dof') {
+    const g = el('g', { 'data-sym':'dof','data-kind-id':'DOF', transform:`translate(${x},${y}) scale(${s})` });
+    g.append(el('circle',{cx:0,cy:0,r:6,fill:'none',stroke:css('--dropOutFuse'),'stroke-width':'1.5'}),
+             el('line',{x1:-4,y1:4,x2:4,y2:-4,stroke:css('--dropOutFuse'),'stroke-width':'1.5'}));
+    return g;
+  }
 
-  g.setAttribute('transform', `translate(${x}, ${y}) scale(${s})`);
+  // custom fallback: simple diamond
+  const g = el('path', { d:'M 0 -9 L 7 0 L 0 9 L -7 0 Z', fill: css('--customSymbol'), stroke: css('--customSymbol'), 'stroke-width':'1.2', 'data-sym':'custom', 'data-kind-id': kindId || 'custom', transform:`translate(${x},${y}) scale(${s})` });
   return g;
 }
 
@@ -343,6 +345,93 @@ async function loadMapServerAndRender(id){ try{
 } catch(e){ showToast('Load failed: '+e.message,'danger'); } }
 async function listMapsServer(){ try{ return await listFromServer(); } catch(e){ showToast('List failed: '+e.message,'danger'); return []; } }
 async function deleteMapServer(id,title){ try{ await deleteFromServer(id); if(currentServerId===id) currentServerId=null; showToast(`Deleted map ID ${id}${title?(' ('+title+')'):''}.`,'success'); } catch(e){ showToast('Delete failed: '+e.message,'danger'); } }
+async function rehydrateFromData(data, mapTitle) {
+  try {
+    clearAll();
+
+    // restore scalars & UI
+    state.scale = data.scale || state.scale;
+    document.getElementById('scaleInput').value = state.scale;
+    state.ssName = data.ssName || '';
+    document.getElementById('ssName').value = state.ssName;
+    state.widthScale = data.widthScale || 1;
+    document.getElementById('widthScale').value = state.widthScale;
+    state.symbolScale = data.symbolScale || 1;
+    document.getElementById('symbolScale').value = state.symbolScale;
+    if (data.customComponents) state.customComponents = data.customComponents;
+
+    // legend pos (optional)
+    if (data.legendPos) {
+      const legend = document.getElementById('legend');
+      legend.style.top = (data.legendPos.top||12) + 'px';
+      legend.style.left = (data.legendPos.left||12) + 'px';
+      legend.style.width = (data.legendPos.width||280) + 'px';
+      legend.style.height = (data.legendPos.height||'auto');
+    }
+
+    // nodes
+    (data.nodes || []).forEach(n => {
+      const nid = createNode(n.x, n.y, n.label, n.type);
+      // keep original ids
+      state.nodes[state.nodes.length - 1].id = n.id;
+      state.idc = Math.max(state.idc, n.id + 1);
+    });
+
+    // segments (lines)
+    (data.segs || []).forEach(s => {
+      const a = nodeById(s.from), b = nodeById(s.to);
+      if (!a || !b) return;
+      const style = styleFor(s.lineType || 'RABBIT');
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+      line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+      line.setAttribute('stroke', style.stroke);
+      line.setAttribute('stroke-width', String(style.width * state.widthScale));
+      if (style.dash) line.setAttribute('stroke-dasharray', style.dash);
+      document.getElementById('view').appendChild(line);
+      const lenLbl = placeLengthLabel(a.x, a.y, b.x, b.y, (Math.round(s.km*100)/100).toFixed(2).replace(/\.00$/,''));
+      const hist = { kind:'seg', segId: s.id, nodeId: s.to, from: s.from, km: s.km, type: s.lineType, els:[line, lenLbl], tapNode: s.to };
+      state.segs.push({ id: s.id, from: s.from, to: s.to, km: s.km, lineType: s.lineType });
+      state.history.push(hist);
+      addListRow('Line', `${style.label} • ${s.km}`, () => focusEls([line, lenLbl]), () => {}, () => {});
+      state.idc = Math.max(state.idc, s.id + 1);
+    });
+
+    // symbols
+    (data.symbols || []).forEach(sym => {
+      const node = nodeById(sym.at);
+      if (!node) return;
+      const g = createSymbolElement(sym.kind, sym.kindId, sym.meta, node.x, node.y, state.symbolScale);
+      if (g) {
+        document.getElementById('view').appendChild(g);
+        const lblEls = [];
+        if (sym.meta) {
+          const t = (function placeLabel(x, y, text, cls='label') {
+            const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+            t.setAttribute('x', x); t.setAttribute('y', y - 14*state.symbolScale);
+            t.setAttribute('text-anchor', 'middle'); t.setAttribute('class', 'label'); t.textContent = text;
+            document.getElementById('view').appendChild(t);
+            return t;
+          })(node.x, node.y, sym.meta);
+          lblEls.push(t);
+        }
+        const hist = { kind:'sym', els:[g, ...lblEls], rec:sym, tapNode:sym.at };
+        state.symbols.push(sym);
+        state.history.push(hist);
+      }
+    });
+
+    state.current = data.current || null;
+    setDir(data.dir || 'right');
+    document.getElementById('mapName').value = mapTitle || '';
+    setStatus();
+    centerView();
+    showToast(`Map "${mapTitle||''}" loaded.`, 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Failed to render map.', 'danger');
+  }
+}
 
 /*** HTVR & report ***/
 function clearHTVR(){ htvrOverlays.forEach(el=>el.remove()); htvrOverlays=[]; }
@@ -434,14 +523,19 @@ $('btnNewMap')?.addEventListener('click', ()=>{ if(state.nodes.length){ showModa
 
 /*** Save/Open/Delete — SERVER-backed ***/
 $('btnSaveMap').addEventListener('click', async () => {
-  const name = mapNameInput.value.trim();
+  const name = document.getElementById('mapName').value.trim();
   if (!name) { showToast('Enter map name.', 'warn'); return; }
   try {
-    const payload = saveMapData();     // your existing function that collects nodes/segs/symbols/etc.
-    const id = await saveMapToServer(name, payload);
-    // keep an offline copy too (optional but handy)
-    localStorage.setItem('sld_map_' + name, JSON.stringify(payload));
-    showToast(`Saved on server (id=${id}).`, 'success');
+    const payload = (typeof saveMapData === 'function') ? saveMapData() : null;
+    if (!payload) { showToast('No map data to save.', 'warn'); return; }
+    const res = await fetch('/api/maps', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ title: name, data: payload })
+    });
+    if (!res.ok) throw new Error('Server save failed');
+    const json = await res.json(); // { id }
+    showToast(`Saved on server (id=${json.id}).`, 'success');
   } catch (e) {
     console.error(e);
     showToast('Server save failed.', 'danger');
@@ -450,34 +544,65 @@ $('btnSaveMap').addEventListener('click', async () => {
 
 $('btnOpenMap').addEventListener('click', async () => {
   try {
-    const items = await listMapsFromServer(); // [{id,title,updatedAt}]
+    const items = await (async function listMapsFromServer() {
+      const res = await fetch('/api/maps');
+      if (!res.ok) throw new Error('Failed to list maps');
+      const j = await res.json();
+      return j.items || [];
+    })();
+
     if (!items.length) { showToast('No maps on server.', 'info'); return; }
 
-    // show your existing modal list
+    // Build a searchable modal using your existing modal system
     showModal({
       title: 'Open Map (Server)',
+      message: '',
+      inputs: [{ id: 'searchText', type: 'text', placeholder: 'Search by title or id...' }],
       type: 'list',
       items: items.map(i => `${i.id} — ${i.title}`),
       buttons: {
         cancel: { text: 'Cancel' },
         ok: {
           text: 'Open',
-          action: async (selected) => {
-            if (!selected) { showToast('Pick a map.', 'warn'); return; }
-            const id = Number(selected.split(' — ')[0]);
-            const rec = await loadMapFromServer(id); // {id,title,data,...}
-            stashToLocalAndLoad(rec.title, rec.data); // reuse your existing loadMap(name)
-            showToast(`Loaded "${rec.title}" from server.`, 'success');
+          action: async (selectedText) => {
+            if (!selectedText) { showToast('Pick a map.', 'warn'); return; }
+            const id = Number(selectedText.split(' — ')[0]);
+            const res = await fetch(`/api/maps/${id}`);
+            if (!res.ok) { showToast('Failed to load map from server.', 'danger'); return; }
+            const record = await res.json(); // { id, title, data, ... }
+            await rehydrateFromData(record.data, record.title);
           }
         }
       }
+    });
+
+    // wire up live search (we can access the modal elements)
+    const input = document.getElementById('searchText');
+    const listDiv = document.getElementById('modal-list');
+    input?.addEventListener('input', () => {
+      const q = (input.value || '').toLowerCase();
+      // clear and repopulate
+      listDiv.innerHTML = '';
+      items
+        .filter(i => String(i.id).includes(q) || (i.title||'').toLowerCase().includes(q))
+        .map(i => `${i.id} — ${i.title}`)
+        .forEach(text => {
+          const div = document.createElement('div');
+          div.className = 'modal-list-item';
+          div.textContent = text;
+          div.dataset.value = text;
+          div.onclick = () => {
+            listDiv.querySelectorAll('.selected').forEach(s => s.classList.remove('selected'));
+            div.classList.add('selected');
+          };
+          listDiv.appendChild(div);
+        });
     });
   } catch (e) {
     console.error(e);
     showToast('Failed to fetch maps from server.', 'danger');
   }
 });
-
 /*** Quick Demo ***/
 $('btnDemo')?.addEventListener('click', ()=>{
   showModal({ title:'Run Demo?', message:'This will clear the current map and draw a sample feeder.', buttons:{ cancel:{text:'Cancel'}, ok:{ text:'Run Demo', class:'success', action:()=>{
