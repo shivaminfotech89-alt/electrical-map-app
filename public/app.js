@@ -1,51 +1,33 @@
-// public/app.js
-// Wire Save/Open to server API, add searchable Open modal, and robust rehydration.
-// This file *re-uses* helpers defined in your original inline script (saveMapData, clearAll, createNode, etc).
-
+// public/app.js — server-backed Save/Open with search + robust rehydrate
 (() => {
-  // ---------- config ----------
-  // If UI and API are on the same domain (Render), keep empty:
-  const BASE_URL = ""; 
-  // If testing local UI against deployed API, set:
-  // const BASE_URL = "https://YOUR-APP.onrender.com";
+  const BASE_URL = ""; // same origin (Render). If testing local UI vs remote API, set full URL.
 
-  // ---------- tiny DOM helpers ----------
   const $ = (id) => document.getElementById(id);
   const svg = () => document.getElementById('view');
+  const toast = (m, t='info') => (typeof showToast === 'function' ? showToast(m, t) : console.log(`[${t}] ${m}`));
 
-  // ---------- Toast fallback ----------
-  function toast(msg, type='info') {
-    if (typeof showToast === 'function') return showToast(msg, type);
-    console.log(`[${type}] ${msg}`);
-  }
-
-  // ---------- Server API helpers ----------
-  async function saveMapToServer(title, dataObj, id = null) {
-    const res = await fetch(`${BASE_URL}/api/maps`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(id != null ? { id, title, data: dataObj } : { title, data: dataObj })
+  // -------------------- API --------------------
+  async function apiSave(title, data, id = null) {
+    const r = await fetch(`${BASE_URL}/api/maps`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(id != null ? { id, title, data } : { title, data })
     });
-    if (!res.ok) throw new Error(`Server save failed (${res.status})`);
-    const json = await res.json(); // { id }
-    return json.id;
+    if (!r.ok) throw new Error(`Save failed (${r.status})`);
+    return r.json(); // { id }
+  }
+  async function apiList() {
+    const r = await fetch(`${BASE_URL}/api/maps`);
+    if (!r.ok) throw new Error(`List failed (${r.status})`);
+    return r.json(); // { items: [...] }
+  }
+  async function apiRead(id) {
+    const r = await fetch(`${BASE_URL}/api/maps/${id}`);
+    if (!r.ok) throw new Error(`Load failed (${r.status})`);
+    return r.json(); // { id,title,data,createdAt,updatedAt }
   }
 
-  async function listMapsFromServer() {
-    const res = await fetch(`${BASE_URL}/api/maps`);
-    if (!res.ok) throw new Error(`Failed to list maps (${res.status})`);
-    const json = await res.json(); // { items: [{id,title,updatedAt}] }
-    return json.items || [];
-  }
-
-  async function loadMapFromServer(id) {
-    const res = await fetch(`${BASE_URL}/api/maps/${id}`);
-    if (!res.ok) throw new Error(`Failed to load map (${res.status})`);
-    return await res.json(); // { id, title, data, createdAt, updatedAt }
-  }
-
-  // ---------- createSymbolElement (used by rehydration) ----------
-  // Relies on your existing css(), xfColor(), and state.
+  // -------------------- Symbol factory --------------------
   function createSymbolElement(kind, kindId, meta, x, y, scale) {
     const s = (window.state?.symbolScale ?? 1) * (scale || 1);
     const svgNS = 'http://www.w3.org/2000/svg';
@@ -123,12 +105,10 @@
       );
       return g;
     }
-    // fallback custom
     return el('path', { d:'M 0 -9 L 7 0 L 0 9 L -7 0 Z', fill: cssVar('--customSymbol'), stroke: cssVar('--customSymbol'), 'stroke-width':'1.2', 'data-sym':'custom', 'data-kind-id': kindId || 'custom', transform:`translate(${x},${y}) scale(${s})` });
   }
 
-  // ---------- Robust rehydration from server data ----------
-  // Uses your existing helpers: clearAll, createNode, nodeById, styleFor, placeLengthLabel, addListRow, setDir, setStatus, centerView, state
+  // -------------------- Rehydrate from server data --------------------
   async function rehydrateFromData(data, mapTitle) {
     try {
       if (typeof clearAll !== 'function') throw new Error('clearAll missing');
@@ -142,12 +122,12 @@
         state.symbolScale = data.symbolScale ?? 1;
         state.customComponents = data.customComponents ?? [];
       }
-      if ($('scaleInput')) $('scaleInput').value = state.scale;
-      if ($('ssName')) $('ssName').value = state.ssName;
-      if ($('widthScale')) $('widthScale').value = state.widthScale;
-      if ($('symbolScale')) $('symbolScale').value = state.symbolScale;
+      $('scaleInput') && ( $('scaleInput').value = state.scale );
+      $('ssName') && ( $('ssName').value = state.ssName );
+      $('widthScale') && ( $('widthScale').value = state.widthScale );
+      $('symbolScale') && ( $('symbolScale').value = state.symbolScale );
 
-      // legend position
+      // legend position (optional)
       if (data.legendPos && $('legend')) {
         const l = $('legend');
         l.style.top = (data.legendPos.top ?? 12) + 'px';
@@ -176,22 +156,16 @@
         if (st.dash) line.setAttribute('stroke-dasharray', st.dash);
         svg().appendChild(line);
 
-        const kmTxt = (() => {
-          const v = Number(s.km); if (!isFinite(v)) return '';
-          const r = Math.round(v * 100) / 100;
-          return String(r).replace(/\.00$/, '');
-        })();
-        const lenLbl = (typeof placeLengthLabel === 'function')
-          ? placeLengthLabel(a.x, a.y, b.x, b.y, kmTxt)
-          : null;
+        if (typeof placeLengthLabel === 'function') {
+          const v = Number(s.km);
+          const txt = isFinite(v) ? (Math.round(v*100)/100).toString().replace(/\.00$/,'') : '';
+          placeLengthLabel(a.x, a.y, b.x, b.y, txt);
+        }
 
-        const hist = { kind:'seg', segId: s.id, nodeId: s.to, from: s.from, km: s.km, type: s.lineType, els:[line, ...(lenLbl?[lenLbl]:[])], tapNode: s.to };
+        const hist = { kind:'seg', segId: s.id, nodeId: s.to, from: s.from, km: s.km, type: s.lineType, els:[line], tapNode: s.to };
         state.segs.push({ id: s.id, from: s.from, to: s.to, km: s.km, lineType: s.lineType });
         state.history.push(hist);
-
-        if (typeof addListRow === 'function') {
-          addListRow('Line', `${st.label} • ${kmTxt}`, () => {}, () => {}, () => {});
-        }
+        typeof addListRow === 'function' && addListRow('Line', `${st.label} • ${s.km}`, () => {}, () => {}, () => {});
         state.idc = Math.max(state.idc, s.id + 1);
       });
 
@@ -218,10 +192,10 @@
       });
 
       state.current = data.current ?? null;
-      if (typeof setDir === 'function') setDir(data.dir || 'right');
-      if ($('mapName')) $('mapName').value = mapTitle || '';
-      if (typeof setStatus === 'function') setStatus();
-      if (typeof centerView === 'function') centerView();
+      typeof setDir === 'function' && setDir(data.dir || 'right');
+      $('mapName') && ( $('mapName').value = mapTitle || '' );
+      typeof setStatus === 'function' && setStatus();
+      typeof centerView === 'function' && centerView();
       toast(`Map "${mapTitle||''}" loaded.`, 'success');
     } catch (err) {
       console.error(err);
@@ -229,19 +203,21 @@
     }
   }
 
-  // ---------- Save button: POST to server ----------
+  // -------------------- Bind Save / Open --------------------
   function bindSave() {
     const btn = $('btnSaveMap');
     if (!btn) return;
-    btn.addEventListener('click', async () => {
+    // Replace old listeners by cloning
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+
+    clone.addEventListener('click', async () => {
+      const name = $('mapName')?.value?.trim();
+      if (!name) return toast('Enter map name.', 'warn');
+      if (typeof saveMapData !== 'function') return toast('saveMapData() missing.', 'danger');
       try {
-        const name = $('mapName')?.value?.trim();
-        if (!name) { toast('Enter map name.', 'warn'); return; }
-        if (typeof saveMapData !== 'function') { toast('saveMapData() missing.', 'danger'); return; }
         const payload = saveMapData();
-        const id = await saveMapToServer(name, payload);
-        // optional: keep a local copy for offline
-        localStorage.setItem('sld_map_' + name, JSON.stringify(payload));
+        const { id } = await apiSave(name, payload);
         toast(`Saved on server (id=${id}).`, 'success');
       } catch (e) {
         console.error(e);
@@ -250,58 +226,56 @@
     });
   }
 
-  // ---------- Open button: searchable list, robust selection, render ----------
   function bindOpen() {
     const btn = $('btnOpenMap');
     if (!btn) return;
-    btn.addEventListener('click', async () => {
-      try {
-        const items = await listMapsFromServer(); // [{id,title,updatedAt}]
-        if (!items.length) { toast('No maps on server.', 'info'); return; }
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
 
-        // Use your existing modal. We pass items as strings "id — title"
+    clone.addEventListener('click', async () => {
+      try {
+        const { items } = await apiList(); // [{id,title,updatedAt}]
+        if (!items?.length) return toast('No maps on server.', 'info');
+
+        // Build searchable modal using your modal system
         if (typeof showModal !== 'function') {
-          console.warn('showModal missing; falling back to prompt.');
+          // fallback prompt
           const pick = prompt('Enter map id to open:\n' + items.map(i => `${i.id} — ${i.title}`).join('\n'));
-          const id = Number((pick||'').split('—')[0].trim());
-          if (id) {
-            const record = await loadMapFromServer(id);
-            await rehydrateFromData(record.data, record.title);
-          }
-          return;
+          if (!pick) return;
+          const id = Number((pick.split('—')[0] || '').trim());
+          if (!id) return toast('Invalid selection.', 'warn');
+          const record = await apiRead(id);
+          return rehydrateFromData(record.data, record.title);
         }
 
+        const lines = items.map(i => `${i.id} — ${i.title}`);
         showModal({
           title: 'Open Map (Server)',
           message: '',
           inputs: [{ id: 'searchText', type: 'text', placeholder: 'Search by title or id...' }],
           type: 'list',
-          items: items.map(i => `${i.id} — ${i.title}`),
+          items: lines,
           buttons: {
             cancel: { text: 'Cancel' },
             ok: {
               text: 'Open',
               action: async (selectedValue) => {
-                // Your modal returns a string from dataset.value; guard anyway:
                 const selectedText = (typeof selectedValue === 'string')
                   ? selectedValue
                   : (selectedValue?.dataset?.value || '');
-                if (!selectedText) { toast('Pick a map.', 'warn'); return; }
-
-                const idPart = selectedText.split(' — ')[0];
-                const id = Number((idPart || '').trim());
-                if (!id) { toast('Invalid selection.', 'warn'); return; }
-
-                const record = await loadMapFromServer(id);
+                if (!selectedText) return toast('Pick a map.', 'warn');
+                const id = Number((selectedText.split(' — ')[0] || '').trim());
+                if (!id) return toast('Invalid selection.', 'warn');
+                const record = await apiRead(id);
                 await rehydrateFromData(record.data, record.title);
               }
             }
           }
         });
 
-        // Live search wiring for your modal
-        const input = document.getElementById('searchText');
-        const listDiv = document.getElementById('modal-list');
+        // live search
+        const input = $('searchText');
+        const listDiv = $('modal-list');
         if (input && listDiv) {
           const renderList = (arr) => {
             listDiv.innerHTML = '';
@@ -309,7 +283,7 @@
               const div = document.createElement('div');
               div.className = 'modal-list-item';
               div.textContent = text;
-              div.dataset.value = text; // IMPORTANT: so OK handler receives a string
+              div.dataset.value = text; // ensure a string is available
               div.onclick = () => {
                 listDiv.querySelectorAll('.selected').forEach(s => s.classList.remove('selected'));
                 div.classList.add('selected');
@@ -317,11 +291,10 @@
               listDiv.appendChild(div);
             });
           };
-          const all = items.map(i => `${i.id} — ${i.title}`);
-          renderList(all);
+          renderList(lines);
           input.addEventListener('input', () => {
             const q = (input.value || '').toLowerCase();
-            renderList(all.filter(t => t.toLowerCase().includes(q)));
+            renderList(lines.filter(t => t.toLowerCase().includes(q)));
           });
         }
       } catch (e) {
@@ -331,10 +304,9 @@
     });
   }
 
-  // ---------- Init ----------
   document.addEventListener('DOMContentLoaded', () => {
     bindSave();
     bindOpen();
-    console.log('[app.js] Save/Open wired to server API.');
+    console.log('[app.js] server-backed Save/Open ready.');
   });
 })();
